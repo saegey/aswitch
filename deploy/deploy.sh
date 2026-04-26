@@ -6,6 +6,7 @@ HOST="${ASWITCH_HOST:-aswitch.local}"
 USER_NAME="${ASWITCH_USER:-saegey}"
 REMOTE_DIR="${ASWITCH_REMOTE_DIR:-/home/${USER_NAME}/aswitch}"
 SERVICE_NAME="${ASWITCH_SERVICE:-aswitch.service}"
+SERVICE_TEMPLATE="${ASWITCH_SERVICE_TEMPLATE:-${SERVICE_NAME}}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -20,10 +21,11 @@ trap 'rm -f "${TMP_SERVICE_FILE}"' EXIT
 sed \
   -e "s|__ASWITCH_USER__|${USER_NAME}|g" \
   -e "s|__ASWITCH_REMOTE_DIR__|${REMOTE_DIR}|g" \
-  "${SCRIPT_DIR}/aswitch.service" > "${TMP_SERVICE_FILE}"
+  "${SCRIPT_DIR}/${SERVICE_TEMPLATE}" > "${TMP_SERVICE_FILE}"
 
 scp \
   "${ROOT_DIR}/aswitch.py" \
+  "${ROOT_DIR}/audio_activity.py" \
   "${ROOT_DIR}/requirements.txt" \
   "${TMP_SERVICE_FILE}" \
   "${USER_NAME}@${HOST}:${REMOTE_DIR}/"
