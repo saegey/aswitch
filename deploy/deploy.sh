@@ -24,8 +24,7 @@ sed \
   "${SCRIPT_DIR}/${SERVICE_TEMPLATE}" > "${TMP_SERVICE_FILE}"
 
 scp \
-  "${ROOT_DIR}/aswitch.py" \
-  "${ROOT_DIR}/audio_activity.py" \
+  "${ROOT_DIR}"/*.py \
   "${ROOT_DIR}/requirements.txt" \
   "${TMP_SERVICE_FILE}" \
   "${USER_NAME}@${HOST}:${REMOTE_DIR}/"

@@ -15,7 +15,6 @@ import numpy as np
 import paho.mqtt.client as mqtt
 import sounddevice as sd
 
-
 AUDIO_DEVICE = os.environ.get("AUDIO_DEVICE", "plughw:CARD=CODEC,DEV=0")
 MQTT_HOST = os.environ.get("MQTT_HOST", "homeassistant.local")
 MQTT_PORT = 1883
@@ -126,13 +125,15 @@ class RecordingWriter(threading.Thread):
             return str(self.current_path) if self.current_path else ""
 
     def consume_dropped_blocks(self):
-        dropped_blocks = self.dropped_blocks
-        self.dropped_blocks = 0
+        with self.state_lock:
+            dropped_blocks = self.dropped_blocks
+            self.dropped_blocks = 0
         return dropped_blocks
 
     def consume_last_error(self):
-        error = self.last_error
-        self.last_error = None
+        with self.state_lock:
+            error = self.last_error
+            self.last_error = None
         return error
 
     def _set_recording(self, enabled):
@@ -169,6 +170,14 @@ class RecordingWriter(threading.Thread):
         with self.state_lock:
             wave_file = self.current_wave
         if wave_file is not None:
+            if RECORDING_ATTENUATION_DB != 0.0:
+                pcm_array = np.frombuffer(pcm_bytes, dtype=np.int16)
+                scaled = np.clip(
+                    pcm_array.astype(np.float32) * RECORDING_ATTENUATION_LINEAR,
+                    -32768.0,
+                    32767.0,
+                )
+                pcm_bytes = scaled.astype(np.int16).tobytes()
             wave_file.writeframes(pcm_bytes)
 
 
@@ -277,16 +286,7 @@ class AudioActivityMonitor:
     def process_audio_block(self, indata, overflowed=False):
         rms_value = float(math.sqrt(np.mean(np.square(indata, dtype=np.float64))) / INT16_MAX)
         now = time.monotonic()
-
-        if RECORDING_ATTENUATION_DB == 0.0:
-            pcm_bytes = indata.tobytes()
-        else:
-            recording_audio = np.clip(
-                indata.astype(np.float32) * RECORDING_ATTENUATION_LINEAR,
-                -32768.0,
-                32767.0,
-            )
-            pcm_bytes = recording_audio.astype(np.int16).tobytes()
+        pcm_bytes = indata.tobytes()
 
         with self.state_lock:
             if overflowed:
@@ -439,7 +439,7 @@ class AudioActivityMonitor:
                     AUDIO_DEVICE,
                 )
                 self.log_available_input_devices()
-                raise SystemExit(1)
+                raise SystemExit(1) from None
 
             self.input_device, device_info = match
             self.input_device_name = device_info["name"]
@@ -505,7 +505,8 @@ class AudioActivityMonitor:
                 self.capture_thread.start()
 
                 self.logger.info(
-                    "Monitoring RMS on %s with threshold %.6f blocksize=%s latency=%s recordings_dir=%s recording_attenuation_db=%.1f mode=blocking-read",
+                    "Monitoring RMS on %s threshold=%.6f blocksize=%s latency=%s"
+                    " recordings_dir=%s attenuation_db=%.1f mode=blocking-read",
                     self.input_device_name or AUDIO_DEVICE,
                     RMS_THRESHOLD,
                     BLOCKSIZE,

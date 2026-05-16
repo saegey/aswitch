@@ -1,7 +1,8 @@
-import paho.mqtt.client as mqtt
-import RPi.GPIO as GPIO
+import logging
 import os
 
+import paho.mqtt.client as mqtt
+import RPi.GPIO as GPIO
 
 AUDIO_PIN = 17
 TRIGGER_PIN = 27
@@ -25,13 +26,16 @@ TRIGGER_ON = GPIO.HIGH
 TRIGGER_OFF = GPIO.LOW
 
 
+logger = logging.getLogger("aswitch")
+
+
 def normalize_payload(payload):
     return payload.decode(errors="ignore").strip().lower()
 
 
 def publish_state(client, topic, state):
     info = client.publish(topic, state, retain=True)
-    print(f"Published {topic} -> {state} (mid={info.mid})", flush=True)
+    logger.info("Published %s -> %s (mid=%s)", topic, state, info.mid)
 
 
 def current_audio_state():
@@ -44,12 +48,12 @@ def current_trigger_state():
 
 def set_audio(client, source, publish=True):
     if source not in {"dac", "mixer"}:
-        print(f"Ignoring invalid audio command: {source}", flush=True)
+        logger.warning("Ignoring invalid audio command: %s", source)
         return
 
     current = current_audio_state()
     if current == source:
-        print(f"Audio already {source}", flush=True)
+        logger.info("Audio already %s", source)
         if publish:
             publish_state(client, AUDIO_STATE_TOPIC, current)
         return
@@ -57,19 +61,19 @@ def set_audio(client, source, publish=True):
     target = AUDIO_DAC if source == "dac" else AUDIO_MIXER
     GPIO.output(AUDIO_PIN, target)
     new_state = current_audio_state()
-    print(f"Audio changed: {current} -> {new_state}", flush=True)
+    logger.info("Audio changed: %s -> %s", current, new_state)
     if publish:
         publish_state(client, AUDIO_STATE_TOPIC, new_state)
 
 
 def set_trigger(client, state, publish=True):
     if state not in {"on", "off"}:
-        print(f"Ignoring invalid trigger command: {state}", flush=True)
+        logger.warning("Ignoring invalid trigger command: %s", state)
         return
 
     current = current_trigger_state()
     if current == state:
-        print(f"Trigger already {state}", flush=True)
+        logger.info("Trigger already %s", state)
         if publish:
             publish_state(client, TRIGGER_STATE_TOPIC, current)
         return
@@ -77,7 +81,7 @@ def set_trigger(client, state, publish=True):
     target = TRIGGER_ON if state == "on" else TRIGGER_OFF
     GPIO.output(TRIGGER_PIN, target)
     new_state = current_trigger_state()
-    print(f"Trigger changed: {current} -> {new_state}", flush=True)
+    logger.info("Trigger changed: %s -> %s", current, new_state)
     if publish:
         publish_state(client, TRIGGER_STATE_TOPIC, new_state)
 
@@ -85,7 +89,7 @@ def set_trigger(client, state, publish=True):
 def apply_safe_defaults(client=None, publish=False):
     GPIO.output(AUDIO_PIN, AUDIO_MIXER)
     GPIO.output(TRIGGER_PIN, TRIGGER_OFF)
-    print("Applied safe defaults: audio=mixer, trigger=off", flush=True)
+    logger.info("Applied safe defaults: audio=mixer, trigger=off")
 
     if client is not None and publish:
         publish_state(client, AUDIO_STATE_TOPIC, current_audio_state())
@@ -93,7 +97,7 @@ def apply_safe_defaults(client=None, publish=False):
 
 
 def on_connect(client, userdata, flags, reason_code, properties):
-    print(f"Connected to MQTT: reason_code={reason_code}", flush=True)
+    logger.info("Connected to MQTT: reason_code=%s", reason_code)
     client.subscribe(AUDIO_COMMAND_TOPIC)
     client.subscribe(TRIGGER_COMMAND_TOPIC)
     publish_state(client, AUDIO_STATE_TOPIC, current_audio_state())
@@ -102,7 +106,7 @@ def on_connect(client, userdata, flags, reason_code, properties):
 
 def on_message(client, userdata, msg):
     payload = normalize_payload(msg.payload)
-    print(f"Incoming {msg.topic} -> {payload}", flush=True)
+    logger.info("Incoming %s -> %s", msg.topic, payload)
 
     if msg.topic == AUDIO_COMMAND_TOPIC:
         set_audio(client, payload)
@@ -111,13 +115,19 @@ def on_message(client, userdata, msg):
 
 
 def main():
+    logging.basicConfig(
+        level=os.environ.get("LOG_LEVEL", "INFO"),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+
     GPIO.setmode(GPIO.BCM)
     GPIO.setwarnings(False)
     GPIO.setup(AUDIO_PIN, GPIO.OUT, initial=AUDIO_MIXER)
     GPIO.setup(TRIGGER_PIN, GPIO.OUT, initial=TRIGGER_OFF)
 
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-    client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+    if MQTT_USERNAME:
+        client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
     client.on_connect = on_connect
     client.on_message = on_message
 
@@ -126,7 +136,7 @@ def main():
     try:
         client.loop_forever()
     except KeyboardInterrupt:
-        print("Shutting down", flush=True)
+        logger.info("Shutting down")
     finally:
         apply_safe_defaults(client, publish=False)
         GPIO.cleanup()
