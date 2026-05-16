@@ -4,11 +4,20 @@ Raspberry Pi MQTT relay controller and audio monitoring suite. Three independent
 
 ## Services
 
+### `aswitch.local`
+
 | File | Systemd unit | Purpose |
 |---|---|---|
 | `aswitch.py` | `aswitch.service` | GPIO relay switch — routes audio source (DAC vs mixer) and controls a trigger output via MQTT commands |
 | `audio_activity.py` | `audio_activity.service` | USB audio RMS detector — publishes active/inactive state, debug RMS values, and optionally records WAV files |
+
+### `pi-cam.local`
+
+| File | Systemd unit | Purpose |
+|---|---|---|
 | `dac_status.py` | `dac_status.service` | USB DAC presence detector — polls `lsusb` and publishes connected/disconnected state |
+
+`pi-cam.local` runs only `dac_status.py`. No relay switching, GPIO, or audio recording — amp control is handled by the ESPHome IR blaster (`esphome/fosi-zd3-ir.yaml`).
 
 ## Key patterns
 

@@ -3,7 +3,7 @@
 set -euo pipefail
 
 HOST="${ASWITCH_HOST:-aswitch.local}"
-USER_NAME="${ASWITCH_USER:-saegey}"
+USER_NAME="${ASWITCH_USER:-pi}"
 REMOTE_DIR="${ASWITCH_REMOTE_DIR:-/home/${USER_NAME}/aswitch}"
 SERVICE_NAME="${ASWITCH_SERVICE:-aswitch.service}"
 SERVICE_TEMPLATE="${ASWITCH_SERVICE_TEMPLATE:-${SERVICE_NAME}}"

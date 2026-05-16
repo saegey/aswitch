@@ -2,7 +2,7 @@ import logging
 import os
 import signal
 import subprocess
-import time
+import threading
 
 import paho.mqtt.client as mqtt
 
@@ -47,7 +47,7 @@ def detect_dac():
 class DacStatusPublisher:
     def __init__(self):
         self.logger = logging.getLogger("dac_status")
-        self.stop_requested = False
+        self._stop = threading.Event()
         self.last_state = None
         self.last_details = None
         self.client = self._build_client()
@@ -56,6 +56,7 @@ class DacStatusPublisher:
         client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=MQTT_CLIENT_ID)
         if MQTT_USERNAME:
             client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+        client.will_set(DAC_AVAILABILITY_TOPIC, "offline", retain=True)
         client.on_connect = self.on_connect
         client.on_disconnect = self.on_disconnect
         client.reconnect_delay_set(min_delay=1, max_delay=30)
@@ -66,7 +67,7 @@ class DacStatusPublisher:
         self.publish_availability("online")
 
     def on_disconnect(self, client, userdata, disconnect_flags, reason_code, properties):
-        if self.stop_requested:
+        if self._stop.is_set():
             self.logger.info("Disconnected from MQTT")
             return
         self.logger.warning("MQTT disconnected: reason_code=%s", reason_code)
@@ -99,20 +100,20 @@ class DacStatusPublisher:
         )
 
         try:
-            while not self.stop_requested:
+            while not self._stop.is_set():
                 try:
                     connected, details = detect_dac()
                     self.publish_state(connected, details)
                 except Exception:
                     self.logger.exception("DAC detection failed")
-                time.sleep(POLL_INTERVAL_SECONDS)
+                self._stop.wait(POLL_INTERVAL_SECONDS)
         finally:
             self.publish_availability("offline")
             self.client.loop_stop()
             self.client.disconnect()
 
     def stop(self, signum=None, frame=None):
-        self.stop_requested = True
+        self._stop.set()
 
 
 def main():

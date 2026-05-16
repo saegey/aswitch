@@ -3,7 +3,7 @@
 set -euo pipefail
 
 HOST="${ASWITCH_HOST:-aswitch.local}"
-USER_NAME="${ASWITCH_USER:-saegey}"
+USER_NAME="${ASWITCH_USER:-pi}"
 LOCAL_CONF="${ASWITCH_SHAIRPORT_CONF:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/shairport-sync.conf}"
 REMOTE_TMP="/tmp/shairport-sync.conf"
 REMOTE_CONF="${ASWITCH_SHAIRPORT_REMOTE_CONF:-/etc/shairport-sync.conf}"

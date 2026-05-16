@@ -15,15 +15,31 @@ Aswitch is a Raspberry Pi-controlled audio switching and amplifier trigger syste
 
 ## Files
 
+### Services — `aswitch.local`
+
 | File | Purpose |
 |---|---|
-| `aswitch.py` | GPIO relay control service — switches audio source and 12V trigger via MQTT |
+| `aswitch.py` | GPIO relay control — switches audio source and 12V trigger via MQTT |
 | `audio_activity.py` | USB audio RMS detector — publishes active/inactive state, optional WAV recording |
-| `dac_status.py` | USB DAC presence detector — polls `lsusb` and publishes MQTT state |
 | `deploy/aswitch.service` | systemd unit for relay control |
 | `deploy/audio_activity.service` | systemd unit for audio activity detection |
+
+### Services — `pi-cam.local`
+
+| File | Purpose |
+|---|---|
+| `dac_status.py` | USB DAC presence detector — polls `lsusb` and publishes MQTT state |
 | `deploy/dac_status.service` | systemd unit for DAC presence detection |
+
+`pi-cam.local` runs only `dac_status.py`. There is no relay switching, GPIO wiring, or audio recording on that host — amp control is handled by the ESPHome IR device.
+
+### Deploy tooling
+
+| File | Purpose |
+|---|---|
 | `deploy/deploy.sh` | rsync + venv + systemd restart over SSH |
+| `deploy/push_env.sh` | push `.env` to a host and optionally restart services |
+| `deploy/deploy_shairport_config.sh` | push tracked Shairport Sync config |
 
 ## Hardware Overview
 
@@ -247,7 +263,7 @@ Tune these on the Pi via `.env` if your mixer output level differs.
 
 | Env var | Default | Description |
 |---|---|---|
-| `RECORDINGS_DIR` | `/home/saegey/aswitch/recordings` | WAV output directory |
+| `RECORDINGS_DIR` | `./recordings` | WAV output directory |
 | `RECORDING_ATTENUATION_DB` | `0.0` | Gain applied before writing (e.g. `-6.0`) |
 | `BLOCKSIZE` | `8192` | PortAudio block size |
 | `STREAM_LATENCY` | `high` | PortAudio latency hint |
@@ -312,8 +328,8 @@ pip install -r requirements.txt
 Create the `.env` file on the Pi — copy from the template and fill in your credentials:
 
 ```bash
-cp .env.example /home/saegey/aswitch/.env
-$EDITOR /home/saegey/aswitch/.env
+cp .env.example /home/YOUR_USER/aswitch/.env
+$EDITOR /home/YOUR_USER/aswitch/.env
 ```
 
 See [`.env.example`](.env.example) for all available variables.
@@ -344,8 +360,8 @@ Override any default:
 
 ```bash
 ASWITCH_HOST=aswitch.local \
-ASWITCH_USER=saegey \
-ASWITCH_REMOTE_DIR=/home/saegey/aswitch \
+ASWITCH_USER=pi \
+ASWITCH_REMOTE_DIR=/home/pi/aswitch \
 ASWITCH_SERVICE=aswitch.service \
 ./deploy/deploy.sh
 ```
@@ -385,7 +401,7 @@ ASWITCH_RESTART_SERVICES="dac_status.service,audio_activity.service" \
 ## Check Status On The Pi
 
 ```bash
-ssh saegey@aswitch.local
+ssh pi@aswitch.local
 sudo systemctl status aswitch.service
 sudo systemctl status audio_activity.service
 journalctl -u aswitch.service -f

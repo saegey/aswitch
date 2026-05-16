@@ -21,7 +21,7 @@ MQTT_PORT = 1883
 MQTT_KEEPALIVE = 60
 MQTT_USERNAME = os.environ.get("MQTT_USER")
 MQTT_PASSWORD = os.environ.get("MQTT_PASS")
-RECORDINGS_DIR = Path(os.environ.get("RECORDINGS_DIR", "/home/saegey/aswitch/recordings"))
+RECORDINGS_DIR = Path(os.environ.get("RECORDINGS_DIR", "./recordings"))
 RECORDING_ATTENUATION_DB = float(os.environ.get("RECORDING_ATTENUATION_DB", "0.0"))
 
 AUDIO_ACTIVITY_STATE_TOPIC = "aswitch/audio_activity/state"
@@ -245,12 +245,11 @@ class AudioActivityMonitor:
     def publish_activity_state(self):
         state = "active" if self.is_active else "inactive"
         info = self.client.publish(AUDIO_ACTIVITY_STATE_TOPIC, state, retain=True)
-        self.logger.info(
-            "Published %s -> %s (mid=%s)", AUDIO_ACTIVITY_STATE_TOPIC, state, info.mid
-        )
+        self.logger.info("Published %s -> %s (mid=%s)", AUDIO_ACTIVITY_STATE_TOPIC, state, info.mid)
 
     def publish_recording_state(self, force=False):
-        state = "on" if self.recording_requested else "off"
+        with self.state_lock:
+            state = "on" if self.recording_requested else "off"
         info = self.client.publish(RECORDING_STATE_TOPIC, state, retain=True)
         self.logger.info("Published %s -> %s (mid=%s)", RECORDING_STATE_TOPIC, state, info.mid)
 
@@ -274,10 +273,10 @@ class AudioActivityMonitor:
         self.client.publish(AUDIO_ACTIVITY_RMS_TOPIC, f"{rms_value:.6f}", retain=False)
 
     def set_recording_requested(self, enabled):
-        if self.recording_requested == enabled:
-            return
-
-        self.recording_requested = enabled
+        with self.state_lock:
+            if self.recording_requested == enabled:
+                return
+            self.recording_requested = enabled
         if self.recording_writer is not None:
             self.recording_writer.set_recording(enabled)
         self.logger.info("Recording command applied: %s", "on" if enabled else "off")
@@ -326,6 +325,7 @@ class AudioActivityMonitor:
             below_since = self.below_threshold_since
             current_state = self.is_active
             overflow_count = self.overflow_count
+            recording_requested = self.recording_requested
 
         self.publish_rms(last_rms)
 
@@ -354,7 +354,7 @@ class AudioActivityMonitor:
                 "active" if current_state else "inactive",
                 last_rms,
                 RMS_THRESHOLD,
-                "on" if self.recording_requested else "off",
+                "on" if recording_requested else "off",
             )
 
         if overflow_count and now - self.last_overflow_log_at >= OVERFLOW_LOG_INTERVAL_SECONDS:
@@ -368,7 +368,8 @@ class AudioActivityMonitor:
                 self.publish_recording_error(message)
             writer_error = self.recording_writer.consume_last_error()
             if writer_error:
-                self.recording_requested = False
+                with self.state_lock:
+                    self.recording_requested = False
                 self.publish_recording_error(f"Recording writer failed: {writer_error}")
                 self.publish_recording_state(force=True)
 

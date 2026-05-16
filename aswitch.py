@@ -1,5 +1,6 @@
 import logging
 import os
+import signal
 
 import paho.mqtt.client as mqtt
 import RPi.GPIO as GPIO
@@ -7,16 +8,17 @@ import RPi.GPIO as GPIO
 AUDIO_PIN = 17
 TRIGGER_PIN = 27
 
-MQTT_HOST = os.environ.get('MQTT_HOST', 'localhost')
+MQTT_HOST = os.environ.get("MQTT_HOST", "localhost")
 MQTT_PORT = 1883
 MQTT_KEEPALIVE = 60
-MQTT_USERNAME = os.environ.get('MQTT_USER')
-MQTT_PASSWORD = os.environ.get('MQTT_PASS')
+MQTT_USERNAME = os.environ.get("MQTT_USER")
+MQTT_PASSWORD = os.environ.get("MQTT_PASS")
 
 AUDIO_COMMAND_TOPIC = "aswitch/audio"
 AUDIO_STATE_TOPIC = "aswitch/audio/state"
 TRIGGER_COMMAND_TOPIC = "aswitch/trigger"
 TRIGGER_STATE_TOPIC = "aswitch/trigger/state"
+AVAILABILITY_TOPIC = "aswitch/availability"
 
 # Relay boards are active opposite from the original assumption.
 AUDIO_DAC = GPIO.HIGH
@@ -100,8 +102,16 @@ def on_connect(client, userdata, flags, reason_code, properties):
     logger.info("Connected to MQTT: reason_code=%s", reason_code)
     client.subscribe(AUDIO_COMMAND_TOPIC)
     client.subscribe(TRIGGER_COMMAND_TOPIC)
+    client.publish(AVAILABILITY_TOPIC, "online", retain=True)
     publish_state(client, AUDIO_STATE_TOPIC, current_audio_state())
     publish_state(client, TRIGGER_STATE_TOPIC, current_trigger_state())
+
+
+def on_disconnect(client, userdata, disconnect_flags, reason_code, properties):
+    if reason_code.value == 0:
+        logger.info("Disconnected from MQTT")
+    else:
+        logger.warning("MQTT disconnected unexpectedly: reason_code=%s", reason_code)
 
 
 def on_message(client, userdata, msg):
@@ -128,15 +138,22 @@ def main():
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
     if MQTT_USERNAME:
         client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+    client.will_set(AVAILABILITY_TOPIC, "offline", retain=True)
     client.on_connect = on_connect
+    client.on_disconnect = on_disconnect
     client.on_message = on_message
+    client.reconnect_delay_set(min_delay=1, max_delay=30)
 
-    client.connect(MQTT_HOST, MQTT_PORT, MQTT_KEEPALIVE)
+    def shutdown(signum=None, frame=None):
+        logger.info("Shutting down")
+        client.disconnect()
+
+    signal.signal(signal.SIGINT, shutdown)
+    signal.signal(signal.SIGTERM, shutdown)
 
     try:
+        client.connect(MQTT_HOST, MQTT_PORT, MQTT_KEEPALIVE)
         client.loop_forever()
-    except KeyboardInterrupt:
-        logger.info("Shutting down")
     finally:
         apply_safe_defaults(client, publish=False)
         GPIO.cleanup()
